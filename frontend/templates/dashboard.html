@@ -1,0 +1,432 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Retailer Recommendation System{% endblock %}
+
+{% block content %}
+<div id="dashboard-content">
+    <!-- Dashboard Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1><i class="fas fa-tachometer-alt me-2"></i>Dashboard</h1>
+        <button class="btn btn-primary" onclick="refreshDashboard()">
+            <i class="fas fa-sync-alt me-2"></i>Refresh
+        </button>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3 mb-3">
+            <div class="card stats-card">
+                <div class="card-body text-center">
+                    <div class="stats-number" id="total-purchases">0</div>
+                    <div class="stats-label">Total Purchases</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card stats-card">
+                <div class="card-body text-center">
+                    <div class="stats-number" id="total-spent">$0</div>
+                    <div class="stats-label">Total Spent</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card stats-card">
+                <div class="card-body text-center">
+                    <div class="stats-number" id="avg-purchase">$0</div>
+                    <div class="stats-label">Avg Purchase</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card stats-card">
+                <div class="card-body text-center">
+                    <div class="stats-number" id="unique-products">0</div>
+                    <div class="stats-label">Unique Products</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content Row -->
+    <div class="row">
+        <!-- Recommendations -->
+        <div class="col-lg-8 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-lightbulb me-2"></i>Recommended for You</h5>
+                </div>
+                <div class="card-body">
+                    <div id="recommendations-container">
+                        <div class="text-center py-4">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading recommendations...</span>
+                            </div>
+                            <p class="mt-2">Loading recommendations...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Top Categories -->
+        <div class="col-lg-4 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-chart-pie me-2"></i>Top Categories</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="categoriesChart" width="400" height="300"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Activity -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-history me-2"></i>Recent Activity</h5>
+                </div>
+                <div class="card-body">
+                    <div id="recent-activity">
+                        <div class="text-center py-3">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading activity...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Other Views (Hidden by default) -->
+<div id="recommendations-view" style="display: none;">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1><i class="fas fa-lightbulb me-2"></i>Product Recommendations</h1>
+        <button class="btn btn-primary" onclick="loadRecommendations()">
+            <i class="fas fa-sync-alt me-2"></i>Refresh Recommendations
+        </button>
+    </div>
+    <div id="all-recommendations-container">
+        <!-- Recommendations will be loaded here -->
+    </div>
+</div>
+
+<div id="products-view" style="display: none;">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1><i class="fas fa-box me-2"></i>Products</h1>
+        <div class="d-flex gap-2">
+            <input type="text" class="form-control" id="product-search" placeholder="Search products..." style="width: 300px;">
+            <button class="btn btn-primary" onclick="searchProducts()">
+                <i class="fas fa-search"></i>
+            </button>
+        </div>
+    </div>
+    <div id="products-container">
+        <!-- Products will be loaded here -->
+    </div>
+</div>
+
+<div id="history-view" style="display: none;">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1><i class="fas fa-history me-2"></i>Purchase History</h1>
+        <select class="form-select" id="history-period" style="width: 200px;" onchange="loadPurchaseHistory()">
+            <option value="30">Last 30 days</option>
+            <option value="90" selected>Last 90 days</option>
+            <option value="180">Last 6 months</option>
+            <option value="365">Last year</option>
+        </select>
+    </div>
+    <div id="history-container">
+        <!-- Purchase history will be loaded here -->
+    </div>
+</div>
+
+<div id="analytics-view" style="display: none;">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1><i class="fas fa-chart-bar me-2"></i>Analytics</h1>
+        <select class="form-select" id="analytics-period" style="width: 200px;" onchange="loadAnalytics()">
+            <option value="7">Last 7 days</option>
+            <option value="30" selected>Last 30 days</option>
+            <option value="90">Last 90 days</option>
+        </select>
+    </div>
+    <div id="analytics-container">
+        <!-- Analytics will be loaded here -->
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let categoriesChart = null;
+
+    // Navigation functions
+    function showDashboard() {
+        hideAllViews();
+        document.getElementById('dashboard-content').style.display = 'block';
+        setActiveNav('showDashboard');
+        loadDashboardData();
+    }
+
+    function showRecommendations() {
+        hideAllViews();
+        document.getElementById('recommendations-view').style.display = 'block';
+        setActiveNav('showRecommendations');
+        loadRecommendations();
+    }
+
+    function showProducts() {
+        hideAllViews();
+        document.getElementById('products-view').style.display = 'block';
+        setActiveNav('showProducts');
+        loadProducts();
+    }
+
+    function showHistory() {
+        hideAllViews();
+        document.getElementById('history-view').style.display = 'block';
+        setActiveNav('showHistory');
+        loadPurchaseHistory();
+    }
+
+    function showAnalytics() {
+        hideAllViews();
+        document.getElementById('analytics-view').style.display = 'block';
+        setActiveNav('showAnalytics');
+        loadAnalytics();
+    }
+
+    function hideAllViews() {
+        document.getElementById('dashboard-content').style.display = 'none';
+        document.getElementById('recommendations-view').style.display = 'none';
+        document.getElementById('products-view').style.display = 'none';
+        document.getElementById('history-view').style.display = 'none';
+        document.getElementById('analytics-view').style.display = 'none';
+    }
+
+    // Dashboard functions
+    async function loadDashboardData() {
+        try {
+            const [analytics, recommendations] = await Promise.all([
+                apiCall(`/api/analytics/dashboard?days=30`),
+                apiCall(`/api/recommendations/${currentUser.retailer_id}?count=6`)
+            ]);
+
+            updateStatsCards(analytics);
+            displayDashboardRecommendations(recommendations.recommendations);
+            updateCategoriesChart(analytics.top_categories);
+            loadRecentActivity();
+        } catch (error) {
+            console.error('Error loading dashboard:', error);
+            showToast('Failed to load dashboard data', 'error');
+        }
+    }
+
+    function updateStatsCards(analytics) {
+        document.getElementById('total-purchases').textContent = analytics.purchase_analytics.total_purchases;
+        document.getElementById('total-spent').textContent = formatCurrency(analytics.purchase_analytics.total_spent);
+        document.getElementById('avg-purchase').textContent = formatCurrency(analytics.purchase_analytics.avg_purchase);
+        document.getElementById('unique-products').textContent = analytics.purchase_analytics.unique_products;
+    }
+
+    function displayDashboardRecommendations(recommendations) {
+        const container = document.getElementById('recommendations-container');
+        
+        if (!recommendations || recommendations.length === 0) {
+            container.innerHTML = '<p class="text-muted text-center">No recommendations available at the moment.</p>';
+            return;
+        }
+
+        const html = `
+            <div class="row">
+                ${recommendations.map(rec => `
+                    <div class="col-md-6 col-lg-4 mb-3">
+                        <div class="card product-card h-100" onclick="viewProduct('${rec.product_id}')">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <h6 class="card-title">${rec.product.name}</h6>
+                                    <span class="recommendation-score">${(rec.score * 100).toFixed(0)}%</span>
+                                </div>
+                                <p class="card-text text-muted small">${rec.product.category}</p>
+                                <p class="card-text"><strong>${formatCurrency(rec.product.price)}</strong></p>
+                                <div class="d-flex gap-2">
+                                    <button class="btn btn-sm btn-outline-primary" onclick="event.stopPropagation(); recordFeedback('${rec.product_id}', 'like')">
+                                        <i class="fas fa-thumbs-up"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="event.stopPropagation(); recordFeedback('${rec.product_id}', 'dislike')">
+                                        <i class="fas fa-thumbs-down"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+            <div class="text-center mt-3">
+                <button class="btn btn-primary" onclick="showRecommendations()">
+                    View All Recommendations
+                </button>
+            </div>
+        `;
+        
+        container.innerHTML = html;
+    }
+
+    function updateCategoriesChart(categories) {
+        const ctx = document.getElementById('categoriesChart').getContext('2d');
+        
+        if (categoriesChart) {
+            categoriesChart.destroy();
+        }
+
+        if (!categories || categories.length === 0) {
+            ctx.fillText('No data available', 100, 150);
+            return;
+        }
+
+        categoriesChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: categories.map(cat => cat.category),
+                datasets: [{
+                    data: categories.map(cat => cat.total_spent),
+                    backgroundColor: [
+                        '#3498db', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6',
+                        '#1abc9c', '#34495e', '#e67e22', '#95a5a6', '#f1c40f'
+                    ]
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    }
+                }
+            }
+        });
+    }
+
+    async function loadRecentActivity() {
+        try {
+            const history = await apiCall(`/api/retailers/${currentUser.retailer_id}/history?limit=5`);
+            displayRecentActivity(history.purchase_history);
+        } catch (error) {
+            console.error('Error loading recent activity:', error);
+        }
+    }
+
+    function displayRecentActivity(purchases) {
+        const container = document.getElementById('recent-activity');
+        
+        if (!purchases || purchases.length === 0) {
+            container.innerHTML = '<p class="text-muted">No recent activity.</p>';
+            return;
+        }
+
+        const html = purchases.map(purchase => `
+            <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+                <div>
+                    <strong>${purchase.product.name}</strong>
+                    <br>
+                    <small class="text-muted">${formatDate(purchase.purchase_date)} • Qty: ${purchase.quantity}</small>
+                </div>
+                <div class="text-end">
+                    <strong>${formatCurrency(purchase.total_amount)}</strong>
+                </div>
+            </div>
+        `).join('');
+        
+        container.innerHTML = html;
+    }
+
+    // Recommendation functions
+    async function loadRecommendations() {
+        const container = document.getElementById('all-recommendations-container');
+        container.innerHTML = '<div class="text-center py-4"><div class="spinner-border"></div></div>';
+        
+        try {
+            const response = await apiCall(`/api/recommendations/${currentUser.retailer_id}?count=20`);
+            displayAllRecommendations(response.recommendations);
+        } catch (error) {
+            console.error('Error loading recommendations:', error);
+            container.innerHTML = '<div class="alert alert-danger">Failed to load recommendations</div>';
+        }
+    }
+
+    function displayAllRecommendations(recommendations) {
+        const container = document.getElementById('all-recommendations-container');
+        
+        if (!recommendations || recommendations.length === 0) {
+            container.innerHTML = '<div class="alert alert-info">No recommendations available</div>';
+            return;
+        }
+
+        const html = `
+            <div class="row">
+                ${recommendations.map(rec => `
+                    <div class="col-md-6 col-lg-3 mb-4">
+                        <div class="card product-card h-100">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <h6 class="card-title">${rec.product.name}</h6>
+                                    <span class="recommendation-score">${(rec.score * 100).toFixed(0)}%</span>
+                                </div>
+                                <p class="card-text text-muted small">${rec.product.category}</p>
+                                <p class="card-text text-muted small">${rec.product.brand || 'No brand'}</p>
+                                <p class="card-text"><strong>${formatCurrency(rec.product.price)}</strong></p>
+                                <p class="card-text small">${rec.product.description || 'No description'}</p>
+                                <div class="d-flex gap-2 mt-auto">
+                                    <button class="btn btn-sm btn-primary flex-fill" onclick="recordFeedback('${rec.product_id}', 'click')">
+                                        View Details
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-success" onclick="recordFeedback('${rec.product_id}', 'like')">
+                                        <i class="fas fa-thumbs-up"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        
+        container.innerHTML = html;
+    }
+
+    // Feedback function
+    async function recordFeedback(productId, feedbackType, recommendationId = null) {
+        try {
+            await apiCall('/api/feedback', {
+                method: 'POST',
+                body: JSON.stringify({
+                    product_id: productId,
+                    feedback_type: feedbackType,
+                    recommendation_id: recommendationId
+                })
+            });
+            
+            showToast(`Feedback recorded: ${feedbackType}`, 'success');
+        } catch (error) {
+            console.error('Error recording feedback:', error);
+            showToast('Failed to record feedback', 'error');
+        }
+    }
+
+    function refreshDashboard() {
+        loadDashboardData();
+        showToast('Dashboard refreshed', 'success');
+    }
+
+    // Initialize dashboard when page loads
+    if (currentUser) {
+        showDashboard();
+    }
+</script>
+{% endblock %}
