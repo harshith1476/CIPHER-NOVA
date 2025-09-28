@@ -1,0 +1,504 @@
+{
+  "name": "Retailer Recommendation System MongoDB Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "webhook-trigger",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "retailer-rec-webhook"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5000/api/recommendations/train",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "httpMethod": "POST",
+        "options": {}
+      },
+      "id": "train-models",
+      "name": "Train ML Models",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [460, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "api-auth",
+          "name": "API Authentication"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5000/api/analytics/dashboard",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "days",
+                "value": "30"
+              }
+            ]
+          }
+        }
+      },
+      "id": "get-analytics",
+      "name": "Get Analytics Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [460, 400],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "api-auth",
+          "name": "API Authentication"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-1",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "train_models",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-action",
+      "name": "Check Action Type",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "connectionString": "mongodb://localhost:27017/retailer_recommendations",
+        "database": "retailer_recommendations",
+        "collection": "purchases",
+        "operation": "aggregate",
+        "query": "[{\"$lookup\":{\"from\":\"retailers\",\"localField\":\"retailer_id\",\"foreignField\":\"retailer_id\",\"as\":\"retailer\"}},{\"$unwind\":\"$retailer\"},{\"$match\":{\"purchase_date\":{\"$gte\":new Date(Date.now() - 30*24*60*60*1000)}}},{\"$group\":{\"_id\":\"$retailer_id\",\"name\":{\"$first\":\"$retailer.name\"},\"purchase_count\":{\"$sum\":1},\"total_spent\":{\"$sum\":\"$total_amount\"}}},{\"$sort\":{\"total_spent\":-1}},{\"$limit\":10}]"
+      },
+      "id": "get-top-retailers",
+      "name": "Get Top Retailers",
+      "type": "n8n-nodes-base.mongodb",
+      "typeVersion": 1,
+      "position": [680, 500],
+      "credentials": {
+        "mongodb": {
+          "id": "mongodb-db",
+          "name": "MongoDB Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "connectionString": "mongodb://localhost:27017/retailer_recommendations",
+        "database": "retailer_recommendations",
+        "collection": "feedback",
+        "operation": "insert",
+        "fields": "retailer_id,product_id,feedback_type,feedback_value,context,feedback_date",
+        "options": {}
+      },
+      "id": "store-feedback",
+      "name": "Store Feedback",
+      "type": "n8n-nodes-base.mongodb",
+      "typeVersion": 1,
+      "position": [680, 300],
+      "credentials": {
+        "mongodb": {
+          "id": "mongodb-db",
+          "name": "MongoDB Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "to": "admin@retailer-system.com",
+        "subject": "Daily Recommendation System Report",
+        "message": "=Daily Report for {{ $now.format('YYYY-MM-DD') }}\n\nTop Retailers by Spending:\n{{ $json.map(item => `${item.name}: $${item.total_spent}`).join('\\n') }}\n\nModel Training Status: {{ $('train-models').item.json.status || 'Not triggered' }}\n\nGenerated at: {{ $now.format('YYYY-MM-DD HH:mm:ss') }}",
+        "options": {}
+      },
+      "id": "send-report",
+      "name": "Send Daily Report",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [900, 400],
+      "credentials": {
+        "smtp": {
+          "id": "smtp-config",
+          "name": "SMTP Configuration"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"success\", \"message\": \"Workflow completed\", \"timestamp\": $now.toISO() } }}"
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 6 * * *"
+            }
+          ]
+        }
+      },
+      "id": "daily-schedule",
+      "name": "Daily Schedule (6 AM)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 500]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5000/api/recommendations/{{ $json.retailer_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "count",
+                "value": "10"
+              }
+            ]
+          }
+        }
+      },
+      "id": "generate-recommendations",
+      "name": "Generate Recommendations",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [680, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "api-auth",
+          "name": "API Authentication"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "connectionString": "mongodb://localhost:27017/retailer_recommendations",
+        "database": "retailer_recommendations",
+        "collection": "retailers",
+        "operation": "find",
+        "query": "{\"is_active\": true}",
+        "options": {}
+      },
+      "id": "get-active-retailers",
+      "name": "Get Active Retailers",
+      "type": "n8n-nodes-base.mongodb",
+      "typeVersion": 1,
+      "position": [460, 500],
+      "credentials": {
+        "mongodb": {
+          "id": "mongodb-db",
+          "name": "MongoDB Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-retailers",
+      "name": "Split Retailers",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [680, 600]
+    },
+    {
+      "parameters": {
+        "to": "={{ $json.email }}",
+        "subject": "Your Weekly Product Recommendations",
+        "message": "=Hello {{ $json.name }},\n\nHere are your personalized product recommendations for this week:\n\n{{ $('generate-recommendations').item.json.recommendations.slice(0, 5).map(rec => `• ${rec.product.name} - ${rec.product.category} - $${rec.product.price}`).join('\\n') }}\n\nLogin to your dashboard to see more: http://localhost:5000\n\nBest regards,\nRetailer Recommendation System",
+        "options": {}
+      },
+      "id": "send-recommendations",
+      "name": "Send Recommendations Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [900, 600],
+      "credentials": {
+        "smtp": {
+          "id": "smtp-config",
+          "name": "SMTP Configuration"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-1",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "sync_data",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-sync-action",
+      "name": "Check Sync Action",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 700]
+    },
+    {
+      "parameters": {
+        "url": "https://api.external-supplier.com/products",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "headers": {
+            "parameters": [
+              {
+                "name": "Accept",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "fetch-external-products",
+      "name": "Fetch External Products",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [680, 700],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "supplier-api",
+          "name": "Supplier API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "connectionString": "mongodb://localhost:27017/retailer_recommendations",
+        "database": "retailer_recommendations",
+        "collection": "products",
+        "operation": "upsert",
+        "upsertFields": "sku",
+        "fields": "name,category,brand,price,description,sku,supplier,is_active,updated_date",
+        "options": {}
+      },
+      "id": "sync-products",
+      "name": "Sync Products to MongoDB",
+      "type": "n8n-nodes-base.mongodb",
+      "typeVersion": 1,
+      "position": [900, 700],
+      "credentials": {
+        "mongodb": {
+          "id": "mongodb-db",
+          "name": "MongoDB Database"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Check Action Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Action Type": {
+      "main": [
+        [
+          {
+            "node": "Train ML Models",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Analytics Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Train ML Models": {
+      "main": [
+        [
+          {
+            "node": "Generate Recommendations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Analytics Data": {
+      "main": [
+        [
+          {
+            "node": "Store Feedback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Feedback": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily Schedule (6 AM)": {
+      "main": [
+        [
+          {
+            "node": "Get Active Retailers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Active Retailers": {
+      "main": [
+        [
+          {
+            "node": "Split Retailers",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Top Retailers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Retailers": {
+      "main": [
+        [
+          {
+            "node": "Generate Recommendations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Recommendations": {
+      "main": [
+        [
+          {
+            "node": "Send Recommendations Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Top Retailers": {
+      "main": [
+        [
+          {
+            "node": "Send Daily Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Sync Action": {
+      "main": [
+        [
+          {
+            "node": "Fetch External Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch External Products": {
+      "main": [
+        [
+          {
+            "node": "Sync Products to MongoDB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "retailer-system",
+      "name": "Retailer System"
+    }
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}

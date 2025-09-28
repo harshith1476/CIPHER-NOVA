@@ -1,0 +1,23 @@
+{
+  "name": "retailer-recommendation-functions",
+  "version": "1.0.0",
+  "description": "Serverless functions for Retailer Recommendation System",
+  "main": "api.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "serverless-http": "^3.2.0",
+    "cors": "^2.8.5"
+  },
+  "keywords": [
+    "serverless",
+    "netlify",
+    "api",
+    "retail",
+    "ai"
+  ],
+  "author": "Retailer Recommendation System",
+  "license": "MIT"
+}
