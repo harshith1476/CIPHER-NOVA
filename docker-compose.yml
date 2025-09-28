@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:7
+    container_name: retailer_mongodb
+    environment:
+      MONGO_INITDB_DATABASE: retailer_recommendations
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - ./scripts/setup_mongodb.py:/docker-entrypoint-initdb.d/setup_mongodb.py
+    networks:
+      - retailer_network
+
+  # Redis for caching (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: retailer_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - retailer_network
+
+  # Flask Application
+  web:
+    build: .
+    container_name: retailer_web
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_CONFIG=production
+      - MONGODB_URI=mongodb://mongodb:27017/retailer_recommendations
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - mongodb
+      - redis
+    volumes:
+      - .:/app
+    networks:
+      - retailer_network
+    command: gunicorn --bind 0.0.0.0:5000 --workers 4 run:app
+
+  # n8n Workflow Automation
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: retailer_n8n
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=admin123
+      - DB_TYPE=mongodb
+      - DB_MONGODB_CONNECTION_URL=mongodb://mongodb:27017/n8n
+    depends_on:
+      - mongodb
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n:/home/node/.n8n/workflows
+    networks:
+      - retailer_network
+
+  # Nginx Reverse Proxy (optional)
+  nginx:
+    image: nginx:alpine
+    container_name: retailer_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
+    depends_on:
+      - web
+    networks:
+      - retailer_network
+
+volumes:
+  mongodb_data:
+  n8n_data:
+
+networks:
+  retailer_network:
+    driver: bridge
